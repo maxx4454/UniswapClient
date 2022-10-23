@@ -1,23 +1,30 @@
+import random
+
 from utils import *
 from resources.const import *
 
 
-def split_chains(n):
+def split_chains():
     chains = []
+    start_adrs = read_privates("../settings/start_privates.txt")
+    n = len(start_adrs)
     addr = read_privates("../settings/privates.txt")
     part_l = len(addr) // n
     for i in range(n):
-        chains.append(Chain(addr[part_l * i:part_l * (i + 1)]))
+        chains.append(Chain(addr[part_l * i:part_l * (i + 1)], start_adrs[i]))
 
     return chains
 
 
 class Chain:
-    def __init__(self, adrs, skips=2):
-        a = [True for _ in range(len(adrs) - skips)]
+    def __init__(self, adrs, start_adr, skips=2):
+        a = [True for _ in range(len(adrs) - skips + 1)]
         for i in range(skips):
             a.append(False)
         random.shuffle(a)
+        a[0] = True
+        random.shuffle(adrs)
+        adrs.insert(0, start_adr)
         self.public = [web3.toChecksumAddress(el[0]) for el in adrs]
         self.private = [el[1] for el in adrs]
         self.incl = a
@@ -30,29 +37,31 @@ class Bot:
         self.step = 0
 
     def next(self):
-        incl = self.chain.incl[self.step]
-        if incl:
-            # do random split
-            h_1, h_2 = self.split()
-            # buy for money
-            self.swap_exact_amount(h_1)
-            # send the rest to the next account
-            self.send(h_2)
-        else:
-            self.send(self.get_balance())
-        self.step += 1
+        if self.get_balance() > 0:
+            print('balance bigger than 0')
+            incl = self.chain.incl[self.step]
+            if incl:
+                # do random split
+                h_1, h_2 = self.split()
+                print(h_1, h_2)
+                # buy for money
+                self.swap_exact_amount(h_1)
+                print('swapped')
+                # send the rest to the next account
+                self.send(h_2)
+                print('sent')
+            else:
+                self.send(self.get_balance())
+            self.step += 1
 
     def get_balance(self):
         return web3.eth.get_balance(self.chain.public[self.step]) - 2 * COMMISSION
 
     def split(self):
         balance = self.get_balance()
-        if balance > 0:
-            h_1 = random.randint(1, min(balance, self.chain.limit[self.step]))
-            h_2 = balance - h_1
-            return h_1, h_2
-        else:
-            return -1, -1
+        h_1 = random.randint(10**15, min(balance, self.chain.limit[self.step]))
+        h_2 = balance - h_1
+        return h_1, h_2
 
     def swap_exact_amount(self, amount):
         try:
@@ -88,12 +97,12 @@ class Bot:
             while not self.chain.incl[i]:
                 i += 1
 
-            nonce = web3.eth.getTransactionCount(self.chain.public[self.step])
+            nonce = web3.eth.getTransactionCount(self.chain.public[self.step]) + 1
             tx = {
                 'nonce': nonce,
                 'to': self.chain.public[i],
                 'value': int(amount),
-                'gas': 21000,
+                'gas': 21_000,
                 'gasPrice': int(web3.eth.gas_price * 1.2)
             }
 

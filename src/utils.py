@@ -25,5 +25,3 @@ def read_privates(file_name):
         addr.append((public, private))
 
     return addr
-
-

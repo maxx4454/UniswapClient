@@ -1,11 +1,10 @@
 from resources.const import web3
 from client import Bot, split_chains
-from settings.config import N
 
 
 def main():
     block_num_old = web3.eth.get_block_number()
-    chains = split_chains(N)
+    chains = split_chains()
     bots = []
     for chain in chains:
         bots.append(Bot(chain))
