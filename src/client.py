@@ -73,7 +73,7 @@ class Bot:
             start = time.time()
             # amount_in_wei = web3.toWei(amount, "ether")
 
-            token_from = web3.toChecksumAddress(WETH_GOERLI)
+            token_from = web3.toChecksumAddress(WETH)
             token_to = web3.toChecksumAddress(TOKEN)
             print("building the tx")
 
