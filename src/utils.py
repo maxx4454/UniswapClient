@@ -27,11 +27,3 @@ def read_privates(file_name):
     return addr
 
 
-def split_chains(n):
-    chains = []
-    addr = read_privates("settings/privates.txt")
-    part_l = len(addr) // n
-    for i in range(n):
-        chains.append(Chain(addr[part_l * i:part_l * (i + 1)]))
-
-    return chains

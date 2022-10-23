@@ -1,4 +1,6 @@
 from resources.const import web3
+from client import Bot, split_chains
+from settings.config import N
 
 
 def main():

@@ -2,16 +2,26 @@ from utils import *
 from resources.const import *
 
 
+def split_chains(n):
+    chains = []
+    addr = read_privates("../settings/privates.txt")
+    part_l = len(addr) // n
+    for i in range(n):
+        chains.append(Chain(addr[part_l * i:part_l * (i + 1)]))
+
+    return chains
+
+
 class Chain:
     def __init__(self, adrs, skips=2):
         a = [True for _ in range(len(adrs) - skips)]
         for i in range(skips):
             a.append(False)
         random.shuffle(a)
-        random.shuffle(adrs)
         self.public = [web3.toChecksumAddress(el[0]) for el in adrs]
         self.private = [el[1] for el in adrs]
         self.incl = a
+        self.limit = [(0.05 * 10 ** 18) * (i + 1) for i in range(len(adrs))]
 
 
 class Bot:
@@ -38,7 +48,7 @@ class Bot:
     def split(self):
         balance = self.get_balance()
         if balance > 0:
-            h_1 = random.randint(1, balance)
+            h_1 = random.randint(1, min(balance, self.chain.limit[self.step]))
             h_2 = balance - h_1
             return h_1, h_2
         else:
@@ -50,9 +60,9 @@ class Bot:
             # get the nonce
             nonce = web3.eth.getTransactionCount(self.chain.public[self.step])
             start = time.time()
-            amount_in_wei = web3.toWei(amount, "ether")
+            # amount_in_wei = web3.toWei(amount, "ether")
 
-            token_from = web3.toChecksumAddress(WETH)
+            token_from = web3.toChecksumAddress(WETH_GOERLI)
             token_to = web3.toChecksumAddress(TOKEN)
             print("building the tx")
 
@@ -63,7 +73,7 @@ class Bot:
                 "from": self.chain.public[self.step],
                 "gas": 250_000,
                 "gasPrice": int(web3.eth.gas_price * 1.2),
-                "value": amount_in_wei
+                "value": int(amount)
             })
 
             signed_tx = web3.eth.account.signTransaction(tx_to_swap, self.chain.private[self.step])
@@ -82,9 +92,9 @@ class Bot:
             tx = {
                 'nonce': nonce,
                 'to': self.chain.public[i],
-                'value': amount,
+                'value': int(amount),
                 'gas': 21000,
-                'gasPrice': web3.toWei('50', 'gwei')
+                'gasPrice': int(web3.eth.gas_price * 1.2)
             }
 
             signed_tx = web3.eth.account.sign_transaction(tx, self.chain.private[self.step])
