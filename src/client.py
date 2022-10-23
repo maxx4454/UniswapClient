@@ -59,7 +59,9 @@ class Bot:
 
     def split(self):
         balance = self.get_balance()
-        h_1 = random.randint(10**15, min(balance, self.chain.limit[self.step]))
+        h_1 = random.randint(10 ** 15, min(balance, self.chain.limit[self.step]))
+        shit = h_1 % 10 ** 15
+        h_1 -= shit
         h_2 = balance - h_1
         return h_1, h_2
 
