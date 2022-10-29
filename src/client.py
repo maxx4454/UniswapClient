@@ -1,23 +1,11 @@
+from const import SEND_COMMISSION, SWAP_COMMISSION, w3, SKIPS
+from web3utils import sell, buy, send
 import random
 
-from utils import *
-from resources.const import *
 
-
-def split_chains():
-    chains = []
-    start_adrs = read_privates("../settings/start_privates.txt")
-    n = len(start_adrs)
-    addr = read_privates("../settings/privates.txt")
-    part_l = len(addr) // n
-    for i in range(n):
-        chains.append(Chain(addr[part_l * i:part_l * (i + 1)], start_adrs[i]))
-
-    return chains
-
-
+# TODO: что здесь творится??
 class Chain:
-    def __init__(self, adrs, start_adr, skips=2):
+    def __init__(self, adrs, start_adr, skips=SKIPS):
         a = [True for _ in range(len(adrs) - skips + 1)]
         for i in range(skips):
             a.append(False)
@@ -25,91 +13,87 @@ class Chain:
         a[0] = True
         random.shuffle(adrs)
         adrs.insert(0, start_adr)
-        self.public = [web3.toChecksumAddress(el[0]) for el in adrs]
+        self.public = [w3.toChecksumAddress(el[0]) for el in adrs]
         self.private = [el[1] for el in adrs]
-        self.incl = a
+        self.active = a
         self.limit = [(0.05 * 10 ** 18) * (i + 1) for i in range(len(adrs))]
+
+        # TODO: ???
+        self.commision = [SEND_COMMISSION + SWAP_COMMISSION if self.active[i] else SEND_COMMISSION for i in
+                          range(len(adrs))]
 
 
 class Bot:
     def __init__(self, chain):
         self.chain = chain
-        self.step = 0
+        self.index = 0
+
+    @property
+    def public(self):
+        return self.chain.public[self.index]
+
+    @property
+    def private(self):
+        return self.chain.private[self.index]
+
+    @property
+    def commission(self):
+        return self.chain.commision[self.index]
+
+    @property
+    def active(self):
+        return self.chain.active[self.index]
 
     def next(self):
-        if self.get_balance() > 0:
+        if self.get_available_balance() > 0:
             print('balance bigger than 0')
-            incl = self.chain.incl[self.step]
-            if incl:
-                # do random split
-                h_1, h_2 = self.split()
-                print(h_1, h_2)
-                # buy for money
-                self.swap_exact_amount(h_1)
-                print('swapped')
-                # send the rest to the next account
-                self.send(h_2)
-                print('sent')
+            if self.active:
+                self.swap_and_send_rest()
             else:
-                self.send(self.get_balance())
-            self.step += 1
+                self.sell_from_old_account()
+            self.index += 1
 
-    def get_balance(self):
-        return web3.eth.get_balance(self.chain.public[self.step]) - 2 * COMMISSION
+    def get_available_balance(self, chain_index=None):
+        if chain_index is None:
+            chain_index = self.index
+        return w3.eth.get_available_balance(self.chain.public[chain_index]) - self.chain.commision[chain_index]
+
+    def swap_and_send_rest(self):
+        # do random split
+        buy_amount, send_amount = self.split()
+        # buy for money
+        buy(account=self.chain.public[self.index], amount_eth=buy_amount, private=self.private)
+        print('swapped')
+        # send the rest to the next account
+        to = self.find_next_account_index()
+        send(send_amount, nonce_mode='increment')
+        print('sent')
+
+    def find_next_account_index(self):
+        to_index = self.index + 1
+        while not self.chain.active[to_index]:
+            to_index += 1
+        return to_index
+
+    def find_first_buyer_with_tokens(self):
+        to_index = self.index + 1
+        while not self.chain.active[to_index]:
+            to_index += 1
+        return to_index
 
     def split(self):
-        balance = self.get_balance()
-        h_1 = random.randint(10 ** 15, min(balance, self.chain.limit[self.step]))
-        shit = h_1 % 10 ** 15
-        h_1 -= shit
-        h_2 = balance - h_1
-        return h_1, h_2
+        balance = self.get_available_balance()
+        buy_amount = random.randint(10 ** 15, min(balance, self.chain.limit[self.index]))
 
-    def swap_exact_amount(self, amount):
-        try:
-            tg_notify("started the swap")
-            # get the nonce
-            nonce = web3.eth.getTransactionCount(self.chain.public[self.step])
-            start = time.time()
-            # amount_in_wei = web3.toWei(amount, "ether")
+        # округление buy_amount до 0.001 eth
+        shit = buy_amount % 10 ** 15
+        buy_amount -= shit
 
-            token_from = web3.toChecksumAddress(WETH)
-            token_to = web3.toChecksumAddress(TOKEN)
-            print("building the tx")
+        send_amount = balance - buy_amount
+        return buy_amount, send_amount
 
-            tx_to_swap = ROUTER_CONTRACT.functions.swapExactETHForTokensSupportingFeeOnTransferTokens(
-                1, [token_from, token_to], self.chain.public[self.step], int(start) + 500_000
-            ).buildTransaction({
-                "nonce": nonce,
-                "from": self.chain.public[self.step],
-                "gas": 250_000,
-                "gasPrice": int(web3.eth.gas_price * 1.2),
-                "value": int(amount)
-            })
-
-            signed_tx = web3.eth.account.signTransaction(tx_to_swap, self.chain.private[self.step])
-            tx_hash = web3.eth.sendRawTransaction(signed_tx.rawTransaction)
-            print(f"tx signed: {tx_hash}")
-        except Exception as e:
-            print(e)
-
-    def send(self, amount):
-        try:
-            i = self.step + 1
-            while not self.chain.incl[i]:
-                i += 1
-
-            nonce = web3.eth.getTransactionCount(self.chain.public[self.step]) + 1
-            tx = {
-                'nonce': nonce,
-                'to': self.chain.public[i],
-                'value': int(amount),
-                'gas': 21_000,
-                'gasPrice': int(web3.eth.gas_price * 1.2)
-            }
-
-            signed_tx = web3.eth.account.sign_transaction(tx, self.chain.private[self.step])
-            tx_hash = web3.eth.sendRawTransaction(signed_tx.rawTransaction)
-            print(f"tx signed: {tx_hash}")
-        except Exception as e:
-            print(e)
+    def sell_from_old_account(self):
+        account = self.find_first_buyer_with_tokens()
+        sell(account)
+        # send the rest to the next account
+        send()

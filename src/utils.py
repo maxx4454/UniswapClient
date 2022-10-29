@@ -1,13 +1,15 @@
-from resources.const import *
+import json
+import web3
 
 
-def tg_notify(bot_message):
-    send_text = 'https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage?chat_id=' + CHAT_ID + \
-                '&parse_mode=HTML&text=' + bot_message
+# TODO: должен возвращать дикт ?
+def load_cfg_dict():
+    return json.loads('config.json')
 
-    response = requests.post(send_text)
-    print('tg sent')
-    return response
+
+def return_config_params(*args):
+    d = load_cfg_dict()
+    return tuple([d[x] for x in args])
 
 
 def read_privates(file_name):
